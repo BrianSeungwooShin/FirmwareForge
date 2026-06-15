@@ -1,3 +1,4 @@
+#IMPORTS 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from langchain_anthropic import ChatAnthropic
@@ -10,6 +11,7 @@ from tools import search_tool, wiki_tool, save_tool
 
 load_dotenv()
 
+#DEFINING THE EXPECTED OUTPUT STRUCTURE FOR THE AGENT'S RESPONSE
 class ESP32CodeResponse(BaseModel):
     project_name: str = Field(description = "The formal engineering name of the project")
     components_needed: list[str] = Field(description = "List of all hardware modules, resistors, and sensors required")
@@ -20,26 +22,37 @@ class ESP32CodeResponse(BaseModel):
     arduino_code: str = Field(description = "The complete, fully commented Arduino C++ source code sketch (.ino format) with integrated exception handling/sensor check loops")
     deployment_guide: str = Field(description = "Step-by-step instructions for the user on how to configure the Arduino IDE, select the partition scheme, and upload the sketch to the ESP32 board")
 
-
+#CREATING THE AI MODEL AND PARSER INSTANCES 
 llm = ChatAnthropic(model = "claude-sonnet-4-6", temperature = 0.1)
 
 parser = PydanticOutputParser(pydantic_object=ESP32CodeResponse)
 
+#THE SYSTEM PROMPT DEFINES THE AGENT'S ROLE, TASK, AND CRITICAL ARCHITECTURAL RULES TO ENSURE THE OUTPUT IS SAFE, RELIABLE, AND PRODUCTION-GRADE. THE PROMPT TEMPLATE STRUCTURES THE CONVERSATION FLOW AND INCLUDES PLACEHOLDERS FOR TOOL INTERACTIONS AND FINAL RESPONSE FORMATTING.
 system_prompt = """You are an expert Senior Embedded Systems Engineer and Firmware Architect specializing in ESP32 microcontrollers.
 Your task is to analyze user requests and engineer highly reliable production-grade hardware systems.
 
 CRITICAL ARCHITECTURAL RULES:
 1. Always implement defensive programming. The 'arduino_code' field MUST check if sensor initializations fail and implement your stated failsafe strategy.
 2. Never write placeholder comments (like '// add your code here'). Write fully realized, compilable C++ code.
-3. You MUST format your final response string strictly as a JSON instance that matches this structural blueprint layout:
+
+FINAL OUTPUT FORMAT — THIS IS MANDATORY:
+Your final message must contain ONLY a single JSON object and NOTHING else.
+- Do NOT wrap it in markdown code fences (no ```json or ```).
+- Do NOT include any explanation, summary, headers, tables, or commentary before or after the JSON.
+- Do NOT repeat the JSON in a different format afterward.
+- The JSON must match this exact structure:
 {format_instructions}"""
 
+
+#BUILDING THE PROMPT TEMPLATE 
 promptTemplate = ChatPromptTemplate.from_messages([
     ("system", system_prompt),
     ("human", "{input}"),
     MessagesPlaceholder(variable_name="agent_scratchpad")
 ])
 
+
+#SETTING UP THE AGENT
 toolsList = [search_tool, wiki_tool, save_tool]
 
 agentCore = create_tool_calling_agent(llm, toolsList, promptTemplate)
@@ -69,10 +82,13 @@ if __name__ == "__main__":
         raw_result = agent_executor.invoke(formatted_input)
 
         output = raw_result["output"]
+
         if isinstance(output, list):
-            output = "".join(
-                block.get("text", "") for block in output if isinstance(block, dict)
-            )
+            text_pieces = []
+            for block in output:
+                if isinstance(block, dict):
+                    text_pieces.append(block.get("text", ""))
+            output = "".join(text_pieces)
 
         parsed_response = parser.parse(output)
 
