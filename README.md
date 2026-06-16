@@ -12,7 +12,7 @@ You describe a hardware project in plain English:
 
 ```
 Describe your hardware project:
-Write code for an ESP32 Weather Station Web Server and save it
+Write code for an ESP32 Weather Station Web Server
 ```
 
 From there, the agent works through the request on its own:
@@ -148,7 +148,9 @@ Prints the structured summary: components, failsafe
 strategy, assembly steps, and deployment guide
 ```
 
-The `extractJsonBlock()` step exists because of a real bug I hit while testing: even with explicit instructions not to, the model sometimes added a sentence before its JSON, like *"The code has been saved. Now compiling the final structured JSON response."* That broke strict JSON parsing every time. Rather than trying to perfectly word-engineer the prompt into submission, I added a small defensive cleanup function that strips markdown fences and pulls out just the outermost `{...}` block, regardless of what text surrounds it.
+**Bug 1: stray text breaking JSON parsing.** Even with clear instructions not to, the model sometimes added a sentence before its JSON, like *"The code has been saved. Now compiling the final structured JSON response."* That extra text broke strict JSON parsing every time. Instead of endlessly tweaking the prompt to stop it, I added `extractJsonBlock()`, a small function that strips away anything outside the JSON itself, so the parser only ever sees the actual data.
+
+**Bug 2: empty output when a tool call fails.** A different error showed up later: `Expecting value: line 1 column 1 (char 0)`. This one meant the parser received an empty string, not bad text. Looking at the logs, a Wikipedia search call had failed mid-run, and the agent stopped without ever producing a final answer. I added a quick check that catches this case and prints a clear message ("a tool call failed, try re-running") instead of that confusing error.
 
 ---
 
@@ -261,7 +263,7 @@ PROJECT ARCHITECTURE: ESP32 BME280 Weather Station Web Server
 
 ## Known Limitations
 
-- **Search reliability.** Web search runs through an unauthenticated DuckDuckGo backend, and I've seen occasional request timeouts during testing. A weak or unstable WiFi connection can also trigger this. There's no automatic retry yet — if it happens, simply re-run the script.
+- **Search reliability.** Web search runs through an unauthenticated DuckDuckGo backend, and I've seen occasional request timeouts during testing. A weak or unstable WiFi connection can also trigger this. There's no automatic retry yet — if a tool call fails mid-run, the script now raises a clear "agent returned an empty response" message instead of a cryptic JSON error, but the fix is still the same: re-run the script.
 - **JSON parsing isn't bulletproof.** Final output reliability depends on the LLM correctly following the JSON-only formatting instructions in the system prompt. I added `extractJsonBlock()` to clean up stray text the model sometimes adds anyway, but this is a mitigation, not a guarantee — malformed output can still fail validation in rare cases.
 - **One file per run.** A single `.ino` file is generated per request; multi-file projects (for example, a separate config header) aren't supported yet.
 - **Runtime is a bit slow.** A full run can take a few minutes. This isn't a bottleneck in the code itself — it's the agent making multiple live web searches and Wikipedia lookups to ground its answer in real specs before writing anything.
