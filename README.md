@@ -186,7 +186,7 @@ FirmwareForge/
 Clone the repository and move into the project folder:
 
 ```bash
-git clone https://github.com/<your-username>/FirmwareForge.git
+https://github.com/BrianSeungwooShin/FirmwareForge.git
 cd FirmwareForge
 ```
 
